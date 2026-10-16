@@ -12,20 +12,21 @@ SkillGap AI is a full-stack web application designed to analyze the gap between 
 - **Python**: 3.10+ (Tested on Python 3.14)
 - **Node.js**: 20+ (Node.js and npm)
 
-### 1. Backend Setup (FastAPI & SQLite)
+### 1. Backend Setup (FastAPI & PostgreSQL)
 ```bash
 # Navigate to project root
 cd "FAI PROJECT"
 
-# Install backend dependencies
-python -m pip install fastapi uvicorn pydantic sqlalchemy python-multipart pypdf httpx
+# Install backend dependencies (including PostgreSQL drivers & python-dotenv)
+python -m pip install -r backend/requirements.txt
 
 # Start the FastAPI backend server
 python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
-*The backend automatically creates the SQLite database (`skillgap.db`) and seeds 16 O\*NET occupations, 40 granular skills, prerequisite DAGs, learning resources, and demo user Alex Chen on first startup.*
+*The backend automatically connects to the PostgreSQL database (configured via `.env`), creates all required schemas, and seeds 16 O\*NET occupations, 40 granular skills, prerequisite DAGs, learning resources, and demo user Alex Chen on first startup.*
 
 API Documentation is live at: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+
 
 ### 2. Frontend Setup (React, Vite, TypeScript & Tailwind CSS)
 ```bash
@@ -109,7 +110,7 @@ $$\text{Skill Alignment Score} = \left(\frac{\sum_{i} \left[\min\left(\frac{C_i}
 ---
 
 ## 🗄️ Database Schema & Taxonomy Data Sources
-The SQLite database implements 15 relational tables via SQLAlchemy:
+The PostgreSQL database implements 15 relational tables via SQLAlchemy:
 - `users`, `occupations`, `skills`, `skill_categories`, `occupation_skills`
 - `user_skills`, `assessments`, `assessment_results`, `user_progress`
 - `learning_resources`, `projects`, `skill_dependencies`
@@ -137,34 +138,151 @@ export OPENAI_API_KEY="your-openai-key"
 
 ---
 
+## 🌐 Production Deployment Guide (Render & Vercel)
+
+This application is architected for cloud-native deployment:
+- **Backend API**: Hosted on **[Render](https://render.com)** (FastAPI + Uvicorn)
+- **Frontend App**: Hosted on **[Vercel](https://vercel.com)** (React + Vite SPA)
+- **Database**: Cloud **PostgreSQL** (Prisma Accelerate / Pooled Postgres)
+
+```
+┌──────────────────────────┐         API Requests         ┌──────────────────────────┐
+│   Vercel (Frontend)      │ ───────────────────────────> │    Render (Backend)      │
+│  React + Vite SPA        │   (HTTPS + CORS Allowed)     │    FastAPI + Uvicorn     │
+│  https://*.vercel.app    │                              │ https://*.onrender.com   │
+└──────────────────────────┘                              └────────────┬─────────────┘
+                                                                       │ SQLAlchemy
+                                                                       ▼ (SSL Pooled)
+                                                          ┌──────────────────────────┐
+                                                          │   Cloud PostgreSQL DB    │
+                                                          │  (Prisma / Neon / Supa)  │
+                                                          └──────────────────────────┘
+```
+
+---
+
+### Part 1: Deploy Backend on Render
+
+#### Step 1: Create a Render Web Service
+1. Push your repository to GitHub.
+2. Log in to [Render Dashboard](https://dashboard.render.com/) and click **"New +"** -> **"Web Service"**.
+3. Connect your GitHub repository.
+
+#### Step 2: Configure Service Settings
+| Setting | Recommended Value | Notes |
+| :--- | :--- | :--- |
+| **Name** | `skillgap-ai-backend` | Or any unique name |
+| **Region** | `Oregon (US West)` | Select region closest to your DB |
+| **Branch** | `main` | Production branch |
+| **Root Directory** | *(leave blank / repo root)* | Imports `backend.app.main:app` |
+| **Runtime** | `Python 3` | Python 3.10+ |
+| **Build Command** | `pip install -r requirements.txt` | Installs FastAPI, psycopg, SQLAlchemy |
+| **Start Command** | `python -m uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT` | Binds to dynamic Render `$PORT` |
+| **Instance Type** | `Free` | Compatible with free tier |
+
+> **Pro Tip (1-Click Blueprint):** Render also supports [`render.yaml`](file:///render.yaml). You can alternatively click **"New +" -> "Blueprint"** in Render to configure this service in 1 click!
+
+#### Step 3: Set Backend Environment Variables in Render
+In the **Environment** tab of your Render Web Service, add:
+
+| Key | Value | Description |
+| :--- | :--- | :--- |
+| `DATABASE_URL` | `postgres://e31b27023ff310571efe5951e5d16ca5e574e7da59700384df0fea04cd3c1959:sk_kUwjleCGJyt9HhV5Ye9Tw@pooled.db.prisma.io:5432/postgres?sslmode=require` | Your PostgreSQL connection URL |
+| `PYTHON_VERSION` | `3.11.9` | Python runtime version |
+| `CORS_ORIGINS` | `*` *(or your Vercel URL once generated)* | Allowed cross-origin domains |
+
+#### Step 4: Verify Backend Health
+Once Render finishes deploying (Status: **Live**), visit:
+- Health check: `https://<your-service>.onrender.com/api/health` -> `{"status":"ok","version":"1.0.0"}`
+- Interactive Swagger Docs: `https://<your-service>.onrender.com/docs`
+
+---
+
+### Part 2: Deploy Frontend on Vercel
+
+#### Step 1: Import Project into Vercel
+1. Log in to [Vercel Dashboard](https://vercel.com/dashboard) and click **"Add New..."** -> **"Project"**.
+2. Select your GitHub repository.
+
+#### Step 2: Configure Build & Output Settings
+- **Framework Preset**: `Vite` (auto-detected)
+- **Root Directory**: Click **Edit** and select **`frontend`**
+- **Build Command**: `npm run build`
+- **Output Directory**: `dist`
+- **Install Command**: `npm install`
+
+#### Step 3: Add Environment Variables in Vercel
+In the **Environment Variables** section before deploying, add:
+
+| Key | Value | Notes |
+| :--- | :--- | :--- |
+| `VITE_API_BASE_URL` | `https://<your-service>.onrender.com/api` | **Replace with your live Render backend URL + `/api`** |
+| `VITE_APP_TITLE` | `SkillGap AI` | App title |
+
+> [!IMPORTANT]
+> Ensure `VITE_API_BASE_URL` does NOT end with a trailing slash.
+> Correct: `https://skillgap-ai-backend.onrender.com/api`
+
+#### Step 4: Deploy & Verify
+1. Click **Deploy**. Vercel will install dependencies and compile the bundle in ~30 seconds.
+2. The included [`frontend/vercel.json`](file:///frontend/vercel.json) handles Single Page Application route rewrites so direct navigation and refreshes never 404.
+3. Open your live Vercel URL (e.g. `https://skillgap-ai.vercel.app`) and click **"Try Demo"** to confirm end-to-end cloud database integration!
+
+---
+
+### Part 3: Environment Variables Matrix
+
+| Variable | Scope | Where to Set | Example Value |
+| :--- | :--- | :--- | :--- |
+| `DATABASE_URL` | Backend | `.env` / Render Env | `postgres://user:pass@host:5432/db?sslmode=require` |
+| `PORT` | Backend | Render automatic | Render injects this dynamically |
+| `CORS_ORIGINS` | Backend | `.env` / Render Env | `*` or `https://your-app.vercel.app` |
+| `VITE_API_BASE_URL` | Frontend | `frontend/.env` / Vercel Env | Local: `/api`<br>Production: `https://<backend>.onrender.com/api` |
+| `VITE_BACKEND_URL` | Frontend | `frontend/.env` (Local only) | `http://127.0.0.1:8000` |
+| `GEMINI_API_KEY` | Backend | Optional (.env / Render) | *(Optional Google Gemini API Key)* |
+
+---
+
 ## 📂 Project Structure
 ```
 FAI PROJECT/
 ├── backend/
-│   ├── app/
-│   │   ├── api/          # FastAPI routers (assessments, careers, roadmap, resume, chat)
-│   │   ├── database/     # SQLAlchemy connection and seed script
-│   │   ├── models/       # 15 SQLAlchemy database models
-│   │   ├── schemas/      # Pydantic v2 schemas
-│   │   ├── services/     # Engine, Roadmap generator, Resume & JD parsers
-│   │   ├── ai/           # AI service abstraction with fallback
-│   │   └── main.py       # FastAPI application entry point
+│   ├── .env.example      # Backend environment variables template
+│   ├── requirements.txt  # Python dependencies (FastAPI, psycopg, SQLAlchemy, etc.)
+│   └── app/
+│       ├── api/          # FastAPI routers (assessments, careers, roadmap, resume, chat)
+│       ├── database/     # PostgreSQL SQLAlchemy connection & seed script
+│       ├── models/       # 15 SQLAlchemy database models
+│       ├── schemas/      # Pydantic v2 schemas
+│       ├── services/     # Engine, Roadmap generator, Resume & JD parsers
+│       ├── ai/           # AI service abstraction with fallback
+│       └── main.py       # FastAPI application entry point with CORS
 ├── frontend/
-│   ├── src/
-│   │   ├── charts/       # 5 Recharts components (Radar, Bar, Scatter, Area)
-│   │   ├── components/   # Navbar, Sidebar, SkillDetailModal, AIAssistantDrawer
-│   │   ├── context/      # SkillGapContext state management
-│   │   ├── pages/        # 16 full-featured pages (Landing, Wizard, Dashboard, etc.)
-│   │   ├── services/     # Frontend API client
-│   │   └── types/        # TypeScript interfaces
+│   ├── .env.example      # Frontend environment variables template
+│   ├── vercel.json       # Vercel SPA routing configuration
+│   └── src/
+│       ├── charts/       # 5 Recharts components (Radar, Bar, Scatter, Area)
+│       ├── components/   # Navbar, Sidebar, SkillDetailModal, AIAssistantDrawer
+│       ├── context/      # SkillGapContext state management
+│       ├── pages/        # 16 full-featured pages (Landing, Wizard, Dashboard, etc.)
+│       ├── services/     # Frontend API client with VITE_API_BASE_URL support
+│       └── types/        # TypeScript interfaces
+├── .env.example          # Root environment template
+├── Procfile              # Render / Web process definition
+├── render.yaml           # Render 1-Click Blueprint specification
+├── vercel.json           # Root Vercel deployment fallback
+├── requirements.txt      # Root Python dependencies
 ├── test_pipeline.py     # End-to-end automated pipeline test suite
-└── README.md
+└── README.md             # Complete documentation and deployment guide
 ```
 
 ---
 
 ## 📋 Implemented Features Checklist
 - [x] Full-Stack Architecture (FastAPI + React 18 + TypeScript + Vite + Tailwind CSS)
+- [x] Cloud PostgreSQL Database (Prisma Accelerate / pooled SSL connection)
+- [x] SQLite completely removed and purged
+- [x] Production Deployment Ready for Render (Backend) and Vercel (Frontend)
 - [x] Deterministic mathematical skill-gap engine
 - [x] 1-Click Presentation Demo Mode (Alex Chen -> Data Scientist)
 - [x] Recharts: Radar chart, Horizontal Gap bar chart, Category alignment, Priority matrix, Progress time curve
@@ -182,4 +300,3 @@ FAI PROJECT/
 - [x] 1-Click Export Analysis Report (.txt download & printable view)
 - [x] Local Heuristic AI fallback ensuring zero-crash offline execution
 
-# fai-project

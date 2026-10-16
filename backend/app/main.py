@@ -24,11 +24,22 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Enable CORS for frontend development
+import os
+
+cors_origins_raw = os.getenv("CORS_ORIGINS", "*")
+if cors_origins_raw == "*" or not cors_origins_raw.strip():
+    origins = ["*"]
+    allow_credentials = False
+else:
+    origins = [orig.strip() for orig in cors_origins_raw.split(",") if orig.strip()]
+    allow_credentials = True
+
+# Enable CORS for frontend development and Vercel production deployments
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )

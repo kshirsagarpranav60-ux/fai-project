@@ -5,7 +5,8 @@ import {
   ReassessmentComparison, ChatMessage
 } from '../types';
 
-const API_BASE = '/api';
+const rawBase = (import.meta.env.VITE_API_BASE_URL as string) || '/api';
+const API_BASE = rawBase.replace(/\/+$/, '');
 
 export const api = {
   // Occupations & Skills
