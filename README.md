@@ -177,7 +177,7 @@ This application is architected for cloud-native deployment:
 | **Root Directory** | *(leave blank / repo root)* | Imports `backend.app.main:app` |
 | **Runtime** | `Python 3` | Python 3.10+ |
 | **Build Command** | `pip install -r requirements.txt` | Installs FastAPI, psycopg, SQLAlchemy |
-| **Start Command** | `python -m uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT` | Binds to dynamic Render `$PORT` |
+| **Start Command** | `python run.py` | Automatically binds to dynamic Render `$PORT` and resolves package paths |
 | **Instance Type** | `Free` | Compatible with free tier |
 
 > **Pro Tip (1-Click Blueprint):** Render also supports [`render.yaml`](file:///render.yaml). You can alternatively click **"New +" -> "Blueprint"** in Render to configure this service in 1 click!
@@ -188,6 +188,7 @@ In the **Environment** tab of your Render Web Service, add:
 | Key | Value | Description |
 | :--- | :--- | :--- |
 | `DATABASE_URL` | `postgres://e31b27023ff310571efe5951e5d16ca5e574e7da59700384df0fea04cd3c1959:sk_kUwjleCGJyt9HhV5Ye9Tw@pooled.db.prisma.io:5432/postgres?sslmode=require` | Your PostgreSQL connection URL |
+| `PYTHONPATH` | `.` | Ensures Python finds the backend package on Linux |
 | `PYTHON_VERSION` | `3.11.9` | Python runtime version |
 | `CORS_ORIGINS` | `*` *(or your Vercel URL once generated)* | Allowed cross-origin domains |
 
